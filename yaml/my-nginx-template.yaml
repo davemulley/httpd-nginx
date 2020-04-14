@@ -47,7 +47,6 @@ objects:
       to:
         kind: Service
           name: ${NAME}
-          weight: 100
           host: david.randalize.com
   - apiVersion: route.openshift.io/v1
     kind: Route
@@ -63,7 +62,6 @@ objects:
       to:
         kind: Service
         name: ${NAME}
-        weight: 100
 - apiVersion: v1
   kind: BuildConfig
   metadata:
