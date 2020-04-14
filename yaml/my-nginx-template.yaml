@@ -28,41 +28,6 @@ objects:
     selector:
       name: ${NAME}
 - apiVersion: v1
-  kind: List
-  metadata:
-    resourceVersion: ""
-    selfLink: ""
-  items:
-  - apiVersion: route.openshift.io/v1
-    kind: Route
-    metadata:
-      labels:
-        app: ${NAME}
-      name: nginx-route-david
-      namespace: ${NAMESPACE}
-    spec:
-      host: david.randalize.com
-      port:
-        targetPort: 8080-tcp
-      to:
-        kind: Service
-          name: ${NAME}
-          host: david.randalize.com
-  - apiVersion: route.openshift.io/v1
-    kind: Route
-    metadata:
-      labels:
-        app: ${NAME}
-      name: nginx-route-randy
-      namespace: ${NAMESPACE}
-    spec:
-      host: randy.randalize.com
-      port:
-        targetPort: 8080-tcp
-      to:
-        kind: Service
-        name: ${NAME}
-- apiVersion: v1
   kind: BuildConfig
   metadata:
     annotations:
