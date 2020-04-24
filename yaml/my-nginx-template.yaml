@@ -12,7 +12,7 @@ metadata:
     openshift.io/long-description: This template defines resources needed to develop
       a static application served by Nginx HTTP server with multiple Hosts
   labels:
-  name: irac-nginx
+  name: ${NAME}
 objects:
 - apiVersion: v1
   kind: Service
