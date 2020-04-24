@@ -1,0 +1,350 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  template: nginx-tempplate
+metadata:
+  annotations:
+    description: Creates the ImageStream for nginx
+    iconClass: icon-nginx
+    openshift.io/display-name: Nginx HTTP server image stream
+    openshift.io/long-description: 
+  labels:
+  name: ${APP_NAME}
+objects:
+- apiVersion: image.openshift.io/v1
+  kind: ImageStream
+  metadata:
+    name: ${APP_NAME}
+    namespace: ${NAMESPACE} 
+    selfLink: >-
+      /apis/image.openshift.io/v1/namespaces/${NAMESPACE}/imagestreams/${APP_NAME}
+    generation: 1
+    labels:
+      app: ${APP_NAME}
+  spec:
+    lookupPolicy:
+      local: false
+- apiVersion: image.openshift.io/v1
+  kind: ImageStream
+  metadata:
+    generation: 2
+    labels:
+      app: ${APP_NAME}
+    name: nginx-112-rhel7
+    namespace: ${NAMESPACE}
+  spec:
+    lookupPolicy:
+      local: false
+    tags:
+    - annotations:
+        openshift.io/imported-from: registry.access.redhat.com/rhscl/${NGINX_VERSION}-rhel7
+      from:
+        kind: DockerImage
+        name: registry.access.redhat.com/rhscl/${NGINX_VERSION}-rhel7
+      generation: 2
+      importPolicy: {}
+      name: latest
+      referencePolicy:
+        type: Source
+- apiVersion: build.openshift.io/v1
+  kind: BuildConfig
+  metadata:
+    name: ${APP_NAME}
+    namespace: ${NAMESPACE}
+    labels:
+      app: ${APP_NAME}
+  spec:
+    nodeSelector: null
+    output:
+      to:
+        kind: ImageStreamTag
+        name: '${APP_NAME}:latest'
+    resources: {}
+    successfulBuildsHistoryLimit: 5
+    failedBuildsHistoryLimit: 5
+    source:
+      git:
+        ref: master
+        uri: 'https://github.com/randalizer/httpd-nginx'
+      type: Git
+    strategy:
+      type: Source
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: '${NGINX_VERSION}-rhel7:latest'
+        env: []
+    triggers:
+      - type: ImageChange
+        imageChange: {}
+      - type: ConfigChange
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${APP_NAME}-pvc  
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 5Gi
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    name: ${APP_NAME}
+    namespace: ${NAMESPACE}
+    labels:
+      app: ${APP_NAME}
+  spec:
+    strategy:
+      type: Rolling
+      rollingParams:
+        updatePeriodSeconds: 1
+        intervalSeconds: 1
+        timeoutSeconds: 600
+        maxUnavailable: 25%
+        maxSurge: 25%
+      resources: {}
+      activeDeadlineSeconds: 21600
+    triggers:
+      - type: ConfigChange
+      - type: ImageChange
+        imageChangeParams:
+          automatic: true
+          containerNames:
+            - ${APP_NAME}
+          from:
+            kind: ImageStreamTag
+            namespace: ${NAMESPACE}
+            name: '${APP_NAME}:latest'
+    replicas: 2
+    revisionHistoryLimit: 10
+    test: false
+    selector:
+      app: ${APP_NAME}
+      deploymentconfig: ${APP_NAME}
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: ${APP_NAME}
+          deploymentconfig: ${APP_NAME}
+        annotations:
+          openshift.io/generated-by: OpenShiftNewApp
+      spec:
+        volumes: 
+          - name: ${APP_NAME}-static-content
+            persistentVolumeClaim:
+              claimName: ${APP_NAME}-pvc
+        containers:
+          - name: ${APP_NAME}
+            image: >-
+              image-registry.openshift-image-registry.svc:5000/${NAMESPACE}/${APP_NAME}
+            ports:
+              - containerPort: 8080
+                protocol: TCP
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            imagePullPolicy: Always
+            volumeMounts:
+              - name: ${APP_NAME}-static-content
+                mountPath: /var/www/content
+        restartPolicy: Always
+        terminationGracePeriodSeconds: 30
+        dnsPolicy: ClusterFirst
+        securityContext: {}
+        schedulerName: default-scheduler
+  status:
+    observedGeneration: 2
+    details:
+      message: config change
+      causes:
+        - type: ConfigChange
+    availableReplicas: 2
+    unavailableReplicas: 0
+    latestVersion: 2
+    updatedReplicas: 2
+    replicas: 2
+    readyReplicas: 2
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: ${APP_NAME}
+    name: ${APP_NAME}
+    namespace: ${NAMESPACE}
+  spec:
+    ports:
+    - name: 8080-tcp
+      port: 8080
+      protocol: TCP
+    - name: 8443-tcp
+      port: 8443
+      protocol: TCP
+      targetPort: 8443
+    selector:
+      app: ${APP_NAME}
+      deploymentconfig: ${APP_NAME}
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    labels:
+      app: ${APP_NAME} 
+    name: ${APP_NAME}-defaut-route
+    namespace: ${NAMESPACE}
+  spec:
+    host: wwwdev.randalize.com
+    port:
+      targetPort: 8080-tcp
+    to:
+      kind: Service
+      name: ${APP_NAME}
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: ${APP_NAME}-nginx-config
+    namespace: ${NAMESPACE}
+  data:
+    nginx.config: |+
+      # For more information on configuration, see:
+      #   * Official English Documentation: http://nginx.org/en/docs/
+      #   * Official Russian Documentation: http://nginx.org/ru/docs/
+      ######
+      ### Randy was here
+      ######
+
+      worker_processes auto;
+      error_log /var/opt/rh/rh-nginx112/log/nginx/error.log;
+      pid /var/opt/rh/rh-nginx112/run/nginx/nginx.pid;
+
+      # Load dynamic modules. See /opt/rh/rh-nginx112/root/usr/share/doc/README.dynamic.
+      include /opt/rh/rh-nginx112/root/usr/share/nginx/modules/*.conf;
+
+      events {
+          worker_connections  1024;
+      }
+
+      http {
+          log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                            '$status $body_bytes_sent "$http_referer" '
+                            '"$http_user_agent" "$http_x_forwarded_for"';
+
+          access_log  /var/opt/rh/rh-nginx112/log/nginx/access.log  main;
+
+          sendfile        on;
+          tcp_nopush      on;
+          tcp_nodelay     on;
+          keepalive_timeout  65;
+          types_hash_max_size 2048;
+
+          include       /etc/opt/rh/rh-nginx112/nginx/mime.types;
+          default_type  application/octet-stream;
+
+          # Load modular configuration files from the /etc/nginx/conf.d directory.
+          # See http://nginx.org/en/docs/ngx_core_module.html#include
+          # for more information.
+          include /opt/app-root/etc/nginx.d/*.conf;
+
+          server {
+              listen       8080 default_server;
+              listen       [::]:8080 default_server;
+              server_name  _;
+              root         /opt/app-root/src;
+
+              # Load configuration files for the default server block.
+              include      /opt/app-root/etc/nginx.default.d/*.conf;
+
+              location / {
+              }
+
+              error_page 404 /404.html;
+              location = /40x.html {
+              }
+
+              error_page 500 502 503 504  /50x.html;
+              location = /50x.html {
+              }
+
+              # proxy the PHP scripts to Apache listening on 127.0.0.1:8080
+              #
+              #location ~ \.php$ {
+              #    proxy_pass   http://127.0.0.1;
+              #}
+
+              # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+              #
+              #location ~ \.php$ {
+              #    root           html;
+              #    fastcgi_pass   127.0.0.1:9000;
+              #    fastcgi_index  index.php;
+              #    fastcgi_param  SCRIPT_FILENAME  /scripts$fastcgi_script_name;
+              #    include        fastcgi_params;
+              #}
+
+              # deny access to .htaccess files, if Apache's document root
+              # concurs with nginx's one
+              #
+              #location ~ /\.ht {
+              #    deny  all;
+              #}
+          }
+
+
+          # another virtual host using mix of IP-, name-, and port-based configuration
+          #
+          #server {
+          #    listen       808000;
+          #    listen       somename:808080;
+          #    server_name  somename  alias  another.alias;
+
+          #    location / {
+          #        root   html;
+          #        index  index.html index.htm;
+          #    }
+          #}
+
+
+          # HTTPS server
+          #
+          #server {
+          #    listen       443;
+          #    server_name  localhost;
+
+          #    ssl                  on;
+          #    ssl_certificate      cert.pem;
+          #    ssl_certificate_key  cert.key;
+
+          #    ssl_session_timeout  5m;
+
+          #    ssl_protocols  SSLv2 SSLv3 TLSv1;
+          #    ssl_ciphers  HIGH:!aNULL:!MD5;
+          #    ssl_prefer_server_ciphers   on;
+
+          #    location / {
+          #        root   html;
+          #        index  index.html index.htm;
+          #    }
+          #}
+
+      }
+parameters:
+- description: The name assigned to all of the frontend objects defined in this template.
+  displayName: App_Name
+  name: APP_NAME
+  required: true
+- description: The namespace assigned to this template.
+  displayName: NameSpace
+  name: NAMESPACE
+  required: true
+- description: Nginx Version
+  displayName: Nginx Version
+  name: NGINX_VERSION
+  required: true
+  value: nginx-112
+
+
